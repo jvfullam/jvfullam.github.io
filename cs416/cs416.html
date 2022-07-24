@@ -10,5 +10,40 @@
 	  <ul><a href="https://fred.stlouisfed.org/series/CPIAUCSL">Consumer Price Index</a></ul>
 	  <ul><a href="https://fred.stlouisfed.org/series/MSPUS">Median Sales Price</a></ul>
 	</p>
+	<svg id="scene1"></svg>
   </body>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+  var width = 600;
+  var height = 400;
+  var svg = d3.select("#scene1").attr("width", width).attr("height", height);
+  
+  var MSP = d3.csv("https://jvfullam.github.io/cs416/MSP.csv", r => { 
+	return {date: d3.timeParse("%Y-%m-%d")(r.DATE), price: parseFloat(r.MSPUS)};
+  });
+  
+  MSP.then(data => {
+    console.log(data[0]);
+	  
+	var x = d3.scaleTime()
+	  .domain(d3.extent(data, d => { return d.date; }))
+      .range([0, width]);
+	
+	var y = d3.scaleLinear()
+	  .domain([0, d3.max(data, d => { return d.price; })])
+      .range([height, 0]);
+	
+	svg.append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", "steelblue")
+      .attr("stroke-width", 1.5)
+      .attr("d", d3.line()
+        .x(d => { return x(d.date) })
+        .y(d => { return y(d.price) })
+      );
+	
+  });
+  
+  </script>
 </html>
