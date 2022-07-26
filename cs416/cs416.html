@@ -10,32 +10,108 @@
 	  <ul><a href="https://fred.stlouisfed.org/series/CPIAUCSL">Consumer Price Index</a></ul>
 	  <ul><a href="https://fred.stlouisfed.org/series/MSPUS">Median Sales Price</a></ul>
 	</p>
+	<h2>Median Sales Price</h2>
 	<svg id="scene1"></svg>
   </body>
   <style>
   body {
-    max-width: 800px;
+    max-width: 600px;
 	margin: auto;
+  }
+  h2 {
+    text-align: center;
   }
   </style>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
+  function getYearQuarter(d) {
+    date = d3.timeParse("%Y-%m-%d")(d);
+	date.setDate(1);
+	date.setMonth(Math.floor(date.getMonth() / 3) * 3);
+	return date;
+  }
+  
+  var CPI = d3.csv("https://jvfullam.github.io/cs416/CPI.csv", r => { 
+	return {date: getYearQuarter(r.DATE), cpi: parseFloat(r.CPIAUCSL)};
+  });
+  
+  var MSP = d3.csv("https://jvfullam.github.io/cs416/MSP.csv", r => { 
+	return {date: getYearQuarter(r.DATE), msp: parseFloat(r.MSPUS)};
+  });
+  
+  var M30 = d3.csv("https://jvfullam.github.io/cs416/M30.csv", r => { 
+	return {date: getYearQuarter(r.DATE), m30: parseFloat(r.MORTGAGE30US)};
+  });
+  
+  var DATA = Promise.all([CPI, MSP, M30]).then(([cpi, msp, m30]) => {
+    var data = [];
+    
+    var cpiIdx = 0;
+	var mspIdx = 0;
+	var m30Idx = 0;
+	
+	var date;	
+	while(cpiIdx < cpi.length && mspIdx < msp.length && m30Idx < m30.length) {
+	  date = cpi[cpiIdx].date;
+	  if (msp[mspIdx].date > date) {
+	    date = msp[mspIdx].date;
+	  }
+	  if (m30[m30Idx].date > date) {
+	    date = m30[m30Idx].date;
+	  }
+	  
+	  while (cpiIdx < cpi.length && cpi[cpiIdx].date < date) {
+	    cpiIdx++;
+	  }
+	  while (mspIdx < msp.length && msp[mspIdx].date < date) {
+	    mspIdx++;
+	  }
+	  while (m30Idx < m30.length && m30[m30Idx].date < date) {
+	    m30Idx++;
+	  }
+	  
+	  var cpiSumCnt = [0, 0];
+	  while (cpiIdx < cpi.length && cpi[cpiIdx].date <= date) {
+	    cpiSumCnt[0] += cpi[cpiIdx].cpi;
+		cpiSumCnt[1] += 1;
+		cpiIdx++;
+	  }
+	  var mspSumCnt = [0, 0];
+	  while (mspIdx < msp.length && msp[mspIdx].date <= date) {
+	    mspSumCnt[0] += msp[mspIdx].msp;
+		mspSumCnt[1] += 1;
+		mspIdx++;
+	  }
+	  var m30SumCnt = [0, 0];
+	  while (m30Idx < m30.length && m30[m30Idx].date <= date) {
+	    m30SumCnt[0] += m30[m30Idx].m30;
+		m30SumCnt[1] += 1;
+		m30Idx++;
+	  }
+	  
+	  data.push({
+	    date: date,
+		cpi: cpiSumCnt[0]/cpiSumCnt[1],
+		msp: mspSumCnt[0]/mspSumCnt[1],
+		m30: m30SumCnt[0]/m30SumCnt[1]
+	  });
+	}
+	console.log(data);
+	return data;
+  });
+  
   var width = 600;
   var height = 400;
   
   var svg = d3.select("#scene1").attr("width", width).attr("height", height);
   
-  var padding = {top: 10, right: 10, bottom: 30, left: 50};
+  var padding = {top: 10, right: 50, bottom: 30, left: 50};
   width -= (padding.left + padding.right);
   height -= (padding.top + padding.bottom);
   
   svg = svg.append("g").attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
   
-  var MSP = d3.csv("https://jvfullam.github.io/cs416/MSP.csv", r => { 
-	return {date: d3.timeParse("%Y-%m-%d")(r.DATE), price: parseFloat(r.MSPUS)};
-  });
-  
-  MSP.then(data => {
+  DATA.then(data => {
 	var x = d3.scaleTime()
 	  .domain(d3.extent(data, d => d.date))
       .range([0, width]);
@@ -43,11 +119,18 @@
       .attr("transform", "translate(0," + height + ")")
       .call(d3.axisBottom(x));
 	
-	var y = d3.scaleLinear()
-	  .domain([0, d3.max(data, d => d.price)])
+	var y1 = d3.scaleLinear()
+	  .domain([0, d3.max(data, d => d.msp)])
       .range([height, 0]);
 	svg.append("g")
-      .call(d3.axisLeft(y));
+      .call(d3.axisLeft(y1));
+	
+	var y2 = d3.scaleLinear()
+	  .domain([0, d3.max(data, d => d.cpi)])
+      .range([height, 0]);
+	svg.append("g")
+	  .attr("transform", "translate(" + width + ",0)")
+      .call(d3.axisRight(y2));
 	
 	svg.append("path")
       .datum(data)
@@ -56,7 +139,17 @@
       .attr("stroke-width", 1.5)
       .attr("d", d3.line()
         .x(d => x(d.date))
-        .y(d => y(d.price))
+        .y(d => y1(d.msp))
+      );
+	
+	svg.append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", "red")
+      .attr("stroke-width", 1.5)
+      .attr("d", d3.line()
+        .x(d => x(d.date))
+        .y(d => y2(d.cpi))
       );
   });
   </script>
