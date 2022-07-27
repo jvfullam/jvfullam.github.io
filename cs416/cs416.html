@@ -12,6 +12,7 @@
 	</p>
 	<h2>Median Sales Price</h2>
 	<svg id="scene1"></svg>
+	<svg id="scene2"></svg>
   </body>
   <style>
   body {
@@ -24,6 +25,14 @@
   </style>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
+  function getMonthlyPayment(msp, m30) {
+    var P = msp * 0.8; // principle loan amount
+    var I = m30 * 0.01 / 12; // monthly interest rate
+	var N = 12 * 30; // total monthly payments
+	var tmp = (1+I)**N;
+    return P * (I * tmp) / (tmp - 1);
+  }
+  
   function getYearQuarter(d) {
     date = d3.timeParse("%Y-%m-%d")(d);
 	date.setDate(1);
@@ -96,6 +105,14 @@
 		m30: m30SumCnt[0]/m30SumCnt[1]
 	  });
 	}
+	
+	var lastCpi = data[data.length - 1].cpi
+	for (var i=0; i<data.length; i++) {
+	  data[i].mspa = data[i].msp * lastCpi / data[i].cpi;
+	  data[i].mmp = getMonthlyPayment(data[i].msp, data[i].m30);
+	  data[i].mmpa = data[i].mmp * lastCpi / data[i].cpi;
+	}
+	
 	console.log(data);
 	return data;
   });
@@ -119,19 +136,12 @@
       .attr("transform", "translate(0," + height + ")")
       .call(d3.axisBottom(x));
 	
-	var y1 = d3.scaleLinear()
-	  .domain([0, d3.max(data, d => d.msp)])
+	var y = d3.scaleLinear()
+	  .domain([0, d3.max(data, d => Math.max(d.msp, d.mspa))])
       .range([height, 0]);
 	svg.append("g")
-      .call(d3.axisLeft(y1));
-	
-	var y2 = d3.scaleLinear()
-	  .domain([0, d3.max(data, d => d.cpi)])
-      .range([height, 0]);
-	svg.append("g")
-	  .attr("transform", "translate(" + width + ",0)")
-      .call(d3.axisRight(y2));
-	
+      .call(d3.axisLeft(y));
+		
 	svg.append("path")
       .datum(data)
       .attr("fill", "none")
@@ -139,7 +149,7 @@
       .attr("stroke-width", 1.5)
       .attr("d", d3.line()
         .x(d => x(d.date))
-        .y(d => y1(d.msp))
+        .y(d => y(d.msp))
       );
 	
 	svg.append("path")
@@ -149,7 +159,53 @@
       .attr("stroke-width", 1.5)
       .attr("d", d3.line()
         .x(d => x(d.date))
-        .y(d => y2(d.cpi))
+        .y(d => y(d.mspa))
+      );
+  });
+  
+  var width = 600;
+  var height = 400;
+  
+  var svg2 = d3.select("#scene2").attr("width", width).attr("height", height);
+  
+  var padding = {top: 10, right: 50, bottom: 30, left: 50};
+  width -= (padding.left + padding.right);
+  height -= (padding.top + padding.bottom);
+  
+  svg2 = svg2.append("g").attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
+  
+  DATA.then(data => {
+	var x = d3.scaleTime()
+	  .domain(d3.extent(data, d => d.date))
+      .range([0, width]);
+	svg2.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x));
+	
+	var y = d3.scaleLinear()
+	  .domain([0, d3.max(data, d => Math.max(d.mmp, d.mmpa))])
+      .range([height, 0]);
+	svg2.append("g")
+      .call(d3.axisLeft(y));
+		
+	svg2.append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", "steelblue")
+      .attr("stroke-width", 1.5)
+      .attr("d", d3.line()
+        .x(d => x(d.date))
+        .y(d => y(d.mmp))
+      );
+	
+	svg2.append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", "red")
+      .attr("stroke-width", 1.5)
+      .attr("d", d3.line()
+        .x(d => x(d.date))
+        .y(d => y(d.mmpa))
       );
   });
   </script>
