@@ -83,7 +83,7 @@ function loadData() {
 
 DATA = loadData();
 
-var padding = {top: 0, right: 50, bottom: 20, left: 50};
+var padding = {top: 0, right: 60, bottom: 20, left: 60};
 
 function drawLineChart(data, title, div, width, height, ys, yfmt) {
   div.selectAll("*").remove();
@@ -100,15 +100,10 @@ function drawLineChart(data, title, div, width, height, ys, yfmt) {
   var x = d3.scaleTime()
     .domain(d3.extent(data, d => d.date))
     .range([0, width]);
-  svg.append("g")
-    .attr("transform", "translate(0," + height + ")")
-    .call(d3.axisBottom(x));
 
   var y = d3.scaleLinear()
     .domain([0, d3.max(data, d => Math.max(...ys.map(y => d[y.y])))])
     .range([height, 0]);
-  svg.append("g")
-    .call(yfmt(d3.axisLeft(y)));
 
   for (var i=0; i<ys.length; i++) {
     svg.append("path")
@@ -120,9 +115,26 @@ function drawLineChart(data, title, div, width, height, ys, yfmt) {
         .x(d => x(d.date))
         .y(d => y(d[ys[i].y])));
   }
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(x));
+  svg.append("g")
+    .attr("class", "axis")
+    .call(yfmt(d3.axisLeft(y)));
 }
 
 var vis = d3.select("#vis");
+
+DATA.then(data => drawLineChart(data, "Median Sales Price",
+  vis.append("div"), 600, 300,
+  [{y: 'msp', color: 'steelblue'}, {y: 'mspa', color: 'crimson'}],
+  yfmt => yfmt.tickFormat(d3.format("$,"))));
+
+DATA.then(data => drawLineChart(data, "Median Monthly Payment",
+  vis.append("div"), 600, 300,
+  [{y: 'mmp', color: 'steelblue'}, {y: 'mmpa', color: 'crimson'}],
+  yfmt => yfmt.tickFormat(d3.format("$,"))));
 
 DATA.then(data => drawLineChart(data, "30 Year Mortage Rate",
   vis.append("div"), 600, 200,
@@ -133,13 +145,3 @@ DATA.then(data => drawLineChart(data, "Inflation",
   vis.append("div"), 600, 200,
   [{y: 'cpiyoy', color: 'steelblue'}],
   yfmt => yfmt.tickFormat(d3.format(".0%"))));
-
-DATA.then(data => drawLineChart(data, "Median Sales Price",
-  vis.append("div"), 600, 400,
-  [{y: 'msp', color: 'steelblue'}, {y: 'mspa', color: 'red'}],
-  yfmt => yfmt));
-
-DATA.then(data => drawLineChart(data, "Median Monthly Payment",
-  vis.append("div"), 600, 400,
-  [{y: 'mmp', color: 'steelblue'}, {y: 'mmpa', color: 'red'}],
-  yfmt => yfmt));

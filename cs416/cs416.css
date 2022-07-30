@@ -1,7 +1,18 @@
 body {
-  max-width: 600px;
+  background-color: #202020;
+  color: #EEEEEE;
+  font-family: Verdana, sans-serif;
   margin: auto;
+  max-width: 600px;
 }
-h2 {
+h1, h2 {
   text-align: center;
+}
+.domain, .tick line {
+  stroke: #EEEEEE;
+  stroke-width: 2px;
+}
+.axis {
+  font-size: 12px;
+  font-weight: bold;
 }
