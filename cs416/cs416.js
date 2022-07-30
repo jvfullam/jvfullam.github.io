@@ -23,6 +23,13 @@ function loadData() {
   var MSP = d3.csv(mspFile, r => ({date: yyyyqq(r.DATE), msp: +r.MSPUS}));
   var M30 = d3.csv(m30File, r => ({date: yyyyqq(r.DATE), m30: +r.MORTGAGE30US*.01}));
 
+  CPI = CPI.then(data => {
+    for (var i=12; i<data.length; i++) {
+      data[i].cpiyoy = (data[i].cpi / data[i-12].cpi) - 1;
+    }
+    return data;
+  });
+
   /* The time series use different intervals (weekly/monthly/quarterly), so
      we'll using the coarsest interval and taking the avg when a source has
      multiple readings in that interval. The series also start and end at
@@ -32,6 +39,7 @@ function loadData() {
 
     var ds = [
       {d: cpi, i: 0, l: cpi.length, v: 'cpi'},
+      {d: cpi, i: 0, l: cpi.length, v: 'cpiyoy'},
       {d: msp, i: 0, l: msp.length, v: 'msp'},
       {d: m30, i: 0, l: m30.length, v: 'm30'}
     ];
@@ -69,141 +77,69 @@ function loadData() {
       merged[i].mmp = getMonthlyPayment(merged[i].msp, merged[i].m30);
       merged[i].mmpa = merged[i].mmp * lastCpi / merged[i].cpi;
     }
-
     return merged;
   });
 }
 
 DATA = loadData();
 
-function drawLineChart(svg, width, height) {
+var padding = {top: 0, right: 50, bottom: 20, left: 50};
 
+function drawLineChart(data, title, div, width, height, ys, yfmt) {
+  div.selectAll("*").remove();
+  div.append("h2").text(title)
+  svg = div.append("svg")
+  svg.attr("width", width).attr("height", height);
+
+  width -= (padding.left + padding.right);
+  height -= (padding.top + padding.bottom);
+
+  svg = svg.append("g")
+    .attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
+
+  var x = d3.scaleTime()
+    .domain(d3.extent(data, d => d.date))
+    .range([0, width]);
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(x));
+
+  var y = d3.scaleLinear()
+    .domain([0, d3.max(data, d => Math.max(...ys.map(y => d[y.y])))])
+    .range([height, 0]);
+  svg.append("g")
+    .call(yfmt(d3.axisLeft(y)));
+
+  for (var i=0; i<ys.length; i++) {
+    svg.append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", ys[i].color)
+      .attr("stroke-width", 1.5)
+      .attr("d", d3.line()
+        .x(d => x(d.date))
+        .y(d => y(d[ys[i].y])));
+  }
 }
 
-var width = 600;
-var height1 = 200;
+var vis = d3.select("#vis");
 
-var svg1 = d3.select("#scene1").attr("width", width).attr("height", height1);
+DATA.then(data => drawLineChart(data, "30 Year Mortage Rate",
+  vis.append("div"), 600, 200,
+  [{y: 'm30', color: 'steelblue'}],
+  yfmt => yfmt.tickFormat(d3.format(".0%"))));
 
-var padding = {top: 10, right: 50, bottom: 30, left: 50};
-width -= (padding.left + padding.right);
-height1 -= (padding.top + padding.bottom);
+DATA.then(data => drawLineChart(data, "Inflation",
+  vis.append("div"), 600, 200,
+  [{y: 'cpiyoy', color: 'steelblue'}],
+  yfmt => yfmt.tickFormat(d3.format(".0%"))));
 
-svg1 = svg1.append("g").attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
+DATA.then(data => drawLineChart(data, "Median Sales Price",
+  vis.append("div"), 600, 400,
+  [{y: 'msp', color: 'steelblue'}, {y: 'mspa', color: 'red'}],
+  yfmt => yfmt));
 
-DATA.then(data => {
-var x = d3.scaleTime()
-  .domain(d3.extent(data, d => d.date))
-    .range([0, width]);
-svg1.append("g")
-    .attr("transform", "translate(0," + height1 + ")")
-    .call(d3.axisBottom(x));
-
-var y = d3.scaleLinear()
-  .domain([0, d3.max(data, d => d.m30)])
-    .range([height1, 0]);
-svg1.append("g")
-    .call(d3.axisLeft(y).tickFormat(d3.format(".0%")));
-
-svg1.append("path")
-    .datum(data)
-    .attr("fill", "none")
-    .attr("stroke", "steelblue")
-    .attr("stroke-width", 1.5)
-    .attr("d", d3.line()
-      .x(d => x(d.date))
-      .y(d => y(d.m30))
-    );
-});
-
-var width = 600;
-var height = 400;
-
-var svg2 = d3.select("#scene2").attr("width", width).attr("height", height);
-
-var padding = {top: 10, right: 50, bottom: 30, left: 50};
-width -= (padding.left + padding.right);
-height -= (padding.top + padding.bottom);
-
-svg2 = svg2.append("g").attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
-
-DATA.then(data => {
-var x = d3.scaleTime()
-  .domain(d3.extent(data, d => d.date))
-    .range([0, width]);
-svg2.append("g")
-    .attr("transform", "translate(0," + height + ")")
-    .call(d3.axisBottom(x));
-
-var y = d3.scaleLinear()
-  .domain([0, d3.max(data, d => Math.max(d.msp, d.mspa))])
-    .range([height, 0]);
-svg2.append("g")
-    .call(d3.axisLeft(y));
-
-svg2.append("path")
-    .datum(data)
-    .attr("fill", "none")
-    .attr("stroke", "steelblue")
-    .attr("stroke-width", 1.5)
-    .attr("d", d3.line()
-      .x(d => x(d.date))
-      .y(d => y(d.msp))
-    );
-
-svg2.append("path")
-    .datum(data)
-    .attr("fill", "none")
-    .attr("stroke", "red")
-    .attr("stroke-width", 1.5)
-    .attr("d", d3.line()
-      .x(d => x(d.date))
-      .y(d => y(d.mspa))
-    );
-});
-
-var width = 600;
-var height = 400;
-
-var svg3 = d3.select("#scene3").attr("width", width).attr("height", height);
-
-var padding = {top: 10, right: 50, bottom: 30, left: 50};
-width -= (padding.left + padding.right);
-height -= (padding.top + padding.bottom);
-
-svg3 = svg3.append("g").attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
-
-DATA.then(data => {
-var x = d3.scaleTime()
-  .domain(d3.extent(data, d => d.date))
-    .range([0, width]);
-svg3.append("g")
-    .attr("transform", "translate(0," + height + ")")
-    .call(d3.axisBottom(x));
-
-var y = d3.scaleLinear()
-  .domain([0, d3.max(data, d => Math.max(d.mmp, d.mmpa))])
-    .range([height, 0]);
-svg3.append("g")
-    .call(d3.axisLeft(y));
-
-svg3.append("path")
-  .datum(data)
-  .attr("fill", "none")
-  .attr("stroke", "steelblue")
-  .attr("stroke-width", 1.5)
-  .attr("d", d3.line()
-      .x(d => x(d.date))
-      .y(d => y(d.mmp))
-    );
-
-svg3.append("path")
-    .datum(data)
-    .attr("fill", "none")
-    .attr("stroke", "red")
-    .attr("stroke-width", 1.5)
-    .attr("d", d3.line()
-       .x(d => x(d.date))
-       .y(d => y(d.mmpa))
-    );
-});
+DATA.then(data => drawLineChart(data, "Median Monthly Payment",
+  vis.append("div"), 600, 400,
+  [{y: 'mmp', color: 'steelblue'}, {y: 'mmpa', color: 'red'}],
+  yfmt => yfmt));
