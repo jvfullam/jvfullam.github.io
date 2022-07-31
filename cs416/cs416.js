@@ -10,15 +10,18 @@ function getMonthlyPayment(price, mortgageRate, downPayment=0.2) {
   return P * (I * T) / (T - 1);
 }
 
+function yyyyqq(d) {
+  date = d3.timeParse("%Y-%m-%d")(d);
+  date.setDate(1);
+  date.setMonth(Math.floor(date.getMonth() / 3) * 3);
+  return date;
+}
+
+function printqq(d) {
+  return "Q" + (Math.floor(d.getMonth() / 3) + 1) + " " + d.getFullYear();
+}
+
 function loadData() {
-
-  var yyyyqq = d => {
-    date = d3.timeParse("%Y-%m-%d")(d);
-    date.setDate(1);
-    date.setMonth(Math.floor(date.getMonth() / 3) * 3);
-    return date;
-  };
-
   var CPI = d3.csv(cpiFile, r => ({date: yyyyqq(r.DATE), cpi: +r.CPIAUCSL}));
   var MSP = d3.csv(mspFile, r => ({date: yyyyqq(r.DATE), msp: +r.MSPUS}));
   var M30 = d3.csv(m30File, r => ({date: yyyyqq(r.DATE), m30: +r.MORTGAGE30US*.01}));
@@ -83,6 +86,12 @@ function loadData() {
 
 DATA = loadData();
 
+var vis = d3.select("#vis");
+
+var tooltipDiv = d3.select("body").append("div")
+  .attr("class", "tooltip")
+  .style("opacity", 0);
+
 var padding = {top: 0, right: 60, bottom: 20, left: 60};
 
 function drawLineChart(data, title, div, width, height, ys, yfmt) {
@@ -102,7 +111,8 @@ function drawLineChart(data, title, div, width, height, ys, yfmt) {
     .range([0, width]);
 
   var y = d3.scaleLinear()
-    .domain([0, d3.max(data, d => Math.max(...ys.map(y => d[y.y])))])
+    .domain([Math.min(0, d3.min(data, d => Math.min(...ys.map(y => d[y.y])))),
+      d3.max(data, d => Math.max(...ys.map(y => d[y.y])))])
     .range([height, 0]);
 
   for (var i=0; i<ys.length; i++) {
@@ -111,6 +121,7 @@ function drawLineChart(data, title, div, width, height, ys, yfmt) {
       .attr("fill", "none")
       .attr("stroke", ys[i].color)
       .attr("stroke-width", 1.5)
+      .style("stroke-dasharray", ys[i].dashes)
       .attr("d", d3.line()
         .x(d => x(d.date))
         .y(d => y(d[ys[i].y])));
@@ -121,27 +132,96 @@ function drawLineChart(data, title, div, width, height, ys, yfmt) {
     .call(d3.axisBottom(x));
   svg.append("g")
     .attr("class", "axis")
-    .call(yfmt(d3.axisLeft(y)));
+    .call(yfmt(d3.axisLeft(y).ticks(5)));
 }
 
-var vis = d3.select("#vis");
+function drawScatterPlot(data, title, div, width, height, x, y) {
+  div.selectAll("*").remove();
+  div.append("h2").text(title)
+  svg = div.append("svg")
+  svg.attr("width", width).attr("height", height);
+
+  width -= (padding.left + padding.right);
+  height -= (padding.top + padding.bottom);
+
+  svg = svg.append("g")
+    .attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
+
+  var minmax = xy => {
+    var min = d3.min(data, d => d[xy]);
+    var max = d3.max(data, d => d[xy]);
+    var bfr = (max - min) * .05;
+    return [min - bfr, max + bfr];
+  };
+
+  var xd = d3.scaleLinear()
+    .domain(minmax(x))
+    .range([0, width]);
+
+  var yd = d3.scaleLinear()
+    .domain(minmax(y))
+    .range([height, 0]);
+
+  svg.append("g")
+    .selectAll("dot")
+    .data(data).enter()
+    .append("circle")
+      .attr("cx", d => xd(d[x]))
+      .attr("cy", d => yd(d[y]))
+      .attr("r", 5)
+      .style("fill", "#EEEEEE7F")
+      .on('mouseover', function (event, d) {
+        d3.select(this).transition()
+          .duration('100')
+          .attr("r", 10)
+          .style("fill", "#FFFFFFFF");
+        var text = "Date: " + printqq(d.date)
+          + "<br/>30Y: " + d3.format(".2%")(d.m30);
+
+        tooltipDiv.html(text)
+          .style("top", (event.pageY - 40) + "px")
+          .style("left", (event.pageX + 15) + "px")
+        tooltipDiv.transition()
+          .duration(100)
+          .style("opacity", 1);
+      })
+      .on('mouseout', function (d, i) {
+        d3.select(this).transition()
+          .duration('100')
+          .attr("r", 5)
+          .style("fill", "#EEEEEE7F");
+        tooltipDiv.transition()
+          .duration(100)
+          .style("opacity", 0);
+      });
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(xd).tickFormat(d3.format(".0%")));
+  svg.append("g")
+    .attr("class", "axis")
+    .call(d3.axisLeft(yd).tickFormat(d3.format("$,")));
+}
 
 DATA.then(data => drawLineChart(data, "Median Sales Price",
   vis.append("div"), 600, 300,
-  [{y: 'msp', color: 'steelblue'}, {y: 'mspa', color: 'crimson'}],
+  [{y: 'msp', color: 'crimson', dashes: 0}, {y: 'mspa', color: 'crimson', dashes: [2,2]}],
   yfmt => yfmt.tickFormat(d3.format("$,"))));
 
 DATA.then(data => drawLineChart(data, "Median Monthly Payment",
   vis.append("div"), 600, 300,
-  [{y: 'mmp', color: 'steelblue'}, {y: 'mmpa', color: 'crimson'}],
+  [{y: 'mmp', color: 'steelblue', dashes: 0}, {y: 'mmpa', color: 'steelblue', dashes: [2,2]}],
   yfmt => yfmt.tickFormat(d3.format("$,"))));
 
 DATA.then(data => drawLineChart(data, "30 Year Mortage Rate",
   vis.append("div"), 600, 200,
-  [{y: 'm30', color: 'steelblue'}],
+  [{y: 'm30', color: 'goldenrod', dashes: 0}],
   yfmt => yfmt.tickFormat(d3.format(".0%"))));
 
-DATA.then(data => drawLineChart(data, "Inflation",
+/*DATA.then(data => drawLineChart(data, "Inflation",
   vis.append("div"), 600, 200,
   [{y: 'cpiyoy', color: 'steelblue'}],
-  yfmt => yfmt.tickFormat(d3.format(".0%"))));
+  yfmt => yfmt.tickFormat(d3.format(".0%"))));*/
+
+DATA.then(data => drawScatterPlot(data, "30Y Mortgage vs Monthly Payment",
+  vis.append("div"), 600, 400, 'm30', 'mmpa'));

@@ -16,3 +16,15 @@ h1, h2 {
   font-size: 12px;
   font-weight: bold;
 }
+div.tooltip {
+     position: absolute;
+     text-align: left;
+     padding: 5px;
+     background: #313639;
+     color: #EEEEEE;
+     border-width: 1px;
+     border-color: #EEEEEE;
+     border-radius: 2px;
+     pointer-events: none;
+     font-size: .7rem;
+}
