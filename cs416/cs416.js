@@ -10,21 +10,34 @@ function getMonthlyPayment(price, mortgageRate, downPayment=0.2) {
   return P * (I * T) / (T - 1);
 }
 
-function yyyyqq(d) {
+function d2qqs(d) {
+  return d.getFullYear() + " Q" + (Math.floor(d.getMonth() / 3) + 1);
+}
+
+function s2qqd(d) {
   date = d3.timeParse("%Y-%m-%d")(d);
   date.setDate(1);
   date.setMonth(Math.floor(date.getMonth() / 3) * 3);
   return date;
 }
 
-function printqq(d) {
-  return "Q" + (Math.floor(d.getMonth() / 3) + 1) + " " + d.getFullYear();
-}
+function minMaxBfr(data, is, min0=false) {
+  var min = d3.min(data, d => Math.min(...is.map(i => d[i])));
+  var max = d3.max(data, d => Math.max(...is.map(i => d[i])));
+  var bfr = (max - min) * .04;
+
+  min -= bfr;
+  if (min0) {
+    min = Math.min(0, min);
+  }
+
+  return [min, max + bfr];
+};
 
 function loadData() {
-  var CPI = d3.csv(cpiFile, r => ({date: yyyyqq(r.DATE), cpi: +r.CPIAUCSL}));
-  var MSP = d3.csv(mspFile, r => ({date: yyyyqq(r.DATE), msp: +r.MSPUS}));
-  var M30 = d3.csv(m30File, r => ({date: yyyyqq(r.DATE), m30: +r.MORTGAGE30US*.01}));
+  var CPI = d3.csv(cpiFile, r => ({date: s2qqd(r.DATE), cpi: +r.CPIAUCSL}));
+  var MSP = d3.csv(mspFile, r => ({date: s2qqd(r.DATE), msp: +r.MSPUS}));
+  var M30 = d3.csv(m30File, r => ({date: s2qqd(r.DATE), m30: +r.MORTGAGE30US*.01}));
 
   CPI = CPI.then(data => {
     for (var i=12; i<data.length; i++) {
@@ -84,43 +97,48 @@ function loadData() {
   });
 }
 
-DATA = loadData();
-
-var vis = d3.select("#vis");
-
-var tooltipDiv = d3.select("body").append("div")
-  .attr("class", "tooltip")
-  .style("opacity", 0);
-
-var padding = {top: 0, right: 60, bottom: 20, left: 60};
-
 function drawLineChart(data, title, div, width, height, ys, yfmt) {
-  div.selectAll("*").remove();
   div.append("h2").text(title)
+  var tooltip = div.append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);
+
   svg = div.append("svg")
   svg.attr("width", width).attr("height", height);
 
+  svg = svg.append("g")
+    .attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
   width -= (padding.left + padding.right);
   height -= (padding.top + padding.bottom);
 
-  svg = svg.append("g")
-    .attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
-
   var x = d3.scaleTime()
     .domain(d3.extent(data, d => d.date))
-    .range([0, width]);
+    .range([0, width-1]);
 
   var y = d3.scaleLinear()
-    .domain([Math.min(0, d3.min(data, d => Math.min(...ys.map(y => d[y.y])))),
-      d3.max(data, d => Math.max(...ys.map(y => d[y.y])))])
+    .domain(minMaxBfr(data, ys.map(y => y.y), true))
     .range([height, 0]);
+
+  var line = svg.append('line')
+    .attr('stroke', '#DDDDDD')
+    .attr('opacity', 0)
+    .attr('stroke-width', 1)
+    .attr('x1', 0).attr('y1', 0)
+    .attr('x2', 0).attr('y2', height);
+  DATE_LISTENERS.push(date => {
+    datex = x(date);
+    line.attr('x1', datex).attr('x2', datex).attr('opacity', 1);
+  });
+  HIDE_LISTENERS.push(() => {
+    line.attr('opacity', 0);
+  });
 
   for (var i=0; i<ys.length; i++) {
     svg.append("path")
       .datum(data)
       .attr("fill", "none")
       .attr("stroke", ys[i].color)
-      .attr("stroke-width", 1.5)
+      .attr("stroke-width", 2)
       .style("stroke-dasharray", ys[i].dashes)
       .attr("d", d3.line()
         .x(d => x(d.date))
@@ -133,11 +151,42 @@ function drawLineChart(data, title, div, width, height, ys, yfmt) {
   svg.append("g")
     .attr("class", "axis")
     .call(yfmt(d3.axisLeft(y).ticks(5)));
+
+  svg.append('rect')
+    .attr('class', 'invisible-mouse-detector')
+    .style('opacity', 0)
+    .attr('x', 0)
+    .attr('y', 0)
+    .attr('width', width)
+    .attr('height', height)
+    .on("mousemove", (event) => {
+      var date = x.invert(d3.pointer(event)[0]);
+      var qqs = d2qqs(date);
+      var d = data.filter(d => qqs == d2qqs(d.date))[0];
+      var text = "Date: " + qqs;
+      ys.sort((y1, y2) => d[y2.y] - d[y1.y])
+        .forEach(y => text += "<br/>" + y.y.toUpperCase() + ": " + y.fmt(d[y.y]));
+      tooltip.html(text)
+        .style("top", (event.pageY - 40) + "px")
+        .style("left", (event.pageX + 15) + "px")
+        .style("opacity", 1);
+      renderDate(date);
+    })
+    .on("mouseout", () => {
+      tooltip.style("opacity", 0)
+        .style("top", "0px")
+        .style("left", "0px");
+      renderNoDate()
+    });
 }
 
 function drawScatterPlot(data, title, div, width, height, x, y) {
-  div.selectAll("*").remove();
+
   div.append("h2").text(title)
+  var tooltip = div.append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);
+
   svg = div.append("svg")
   svg.attr("width", width).attr("height", height);
 
@@ -147,19 +196,12 @@ function drawScatterPlot(data, title, div, width, height, x, y) {
   svg = svg.append("g")
     .attr("transform", "translate(" + padding.left + ", " + padding.top + ")");
 
-  var minmax = xy => {
-    var min = d3.min(data, d => d[xy]);
-    var max = d3.max(data, d => d[xy]);
-    var bfr = (max - min) * .05;
-    return [min - bfr, max + bfr];
-  };
-
   var xd = d3.scaleLinear()
-    .domain(minmax(x))
+    .domain(minMaxBfr(data, [x]))
     .range([0, width]);
 
   var yd = d3.scaleLinear()
-    .domain(minmax(y))
+    .domain(minMaxBfr(data, [y]))
     .range([height, 0]);
 
   svg.append("g")
@@ -175,13 +217,13 @@ function drawScatterPlot(data, title, div, width, height, x, y) {
           .duration('100')
           .attr("r", 10)
           .style("fill", "#FFFFFFFF");
-        var text = "Date: " + printqq(d.date)
+        var text = "Date: " + d2qqs(d.date)
           + "<br/>30Y: " + d3.format(".2%")(d.m30);
 
-        tooltipDiv.html(text)
+        tooltip.html(text)
           .style("top", (event.pageY - 40) + "px")
           .style("left", (event.pageX + 15) + "px")
-        tooltipDiv.transition()
+        tooltip.transition()
           .duration(100)
           .style("opacity", 1);
       })
@@ -190,7 +232,7 @@ function drawScatterPlot(data, title, div, width, height, x, y) {
           .duration('100')
           .attr("r", 5)
           .style("fill", "#EEEEEE7F");
-        tooltipDiv.transition()
+        tooltip.transition()
           .duration(100)
           .style("opacity", 0);
       });
@@ -203,25 +245,112 @@ function drawScatterPlot(data, title, div, width, height, x, y) {
     .call(d3.axisLeft(yd).tickFormat(d3.format("$,")));
 }
 
-DATA.then(data => drawLineChart(data, "Median Sales Price",
-  vis.append("div"), 600, 300,
-  [{y: 'msp', color: 'crimson', dashes: 0}, {y: 'mspa', color: 'crimson', dashes: [2,2]}],
-  yfmt => yfmt.tickFormat(d3.format("$,"))));
+function renderMMP(div, width, height) {
+  DATA.then(data => drawLineChart(data, "Median Monthly Payment", div, width, height,
+    [{y: 'mmp', color: 'steelblue', dashes: 0, fmt: d3.format("$,.0f")},
+     {y: 'mmpa', color: 'steelblue', dashes: [2,2], fmt: d3.format("$,.0f")}],
+    yfmt => yfmt.tickFormat(d3.format("$,.0f"))));
+}
 
-DATA.then(data => drawLineChart(data, "Median Monthly Payment",
-  vis.append("div"), 600, 300,
-  [{y: 'mmp', color: 'steelblue', dashes: 0}, {y: 'mmpa', color: 'steelblue', dashes: [2,2]}],
-  yfmt => yfmt.tickFormat(d3.format("$,"))));
+function renderMSP(div, width, height) {
+  DATA.then(data => drawLineChart(data, "Median Sales Price", div, width, height,
+    [{y: 'msp', color: 'crimson', dashes: 0, fmt: d3.format("$,.0f")},
+     {y: 'mspa', color: 'crimson', dashes: [2,2], fmt: d3.format("$,.0f")}],
+    yfmt => yfmt.tickFormat(d3.format("$,.0f"))));
+}
 
-DATA.then(data => drawLineChart(data, "30 Year Mortage Rate",
-  vis.append("div"), 600, 200,
-  [{y: 'm30', color: 'goldenrod', dashes: 0}],
-  yfmt => yfmt.tickFormat(d3.format(".0%"))));
+function renderM30(div, width, height) {
+  DATA.then(data => drawLineChart(data, "30 Year Mortage Rate", div, width, height,
+    [{y: 'm30', color: 'goldenrod', dashes: 0, fmt: d3.format(".2%")}],
+    yfmt => yfmt.tickFormat(d3.format(".0%"))));
+}
 
-/*DATA.then(data => drawLineChart(data, "Inflation",
-  vis.append("div"), 600, 200,
-  [{y: 'cpiyoy', color: 'steelblue'}],
-  yfmt => yfmt.tickFormat(d3.format(".0%"))));*/
+function render(scene) {
+  console.log("scene: " + scene);
+  DATE_LISTENERS = [];
+  HIDE_LISTENERS = [];
+  vis.selectAll("*").remove();
 
-DATA.then(data => drawScatterPlot(data, "30Y Mortgage vs Monthly Payment",
-  vis.append("div"), 600, 400, 'm30', 'mmpa'));
+  if (scene == 0) {
+    render0();
+  } else if (scene == 1) {
+    render1();
+  } else if (scene == 2) {
+    render2();
+  } else if (scene == 3) {
+    render3();
+  } else {
+    render4();
+  }
+
+  var buttonDiv = vis.append("div").attr("class", "buttons");
+  var backVisible = (scene > 0) ? "visible" : "hidden";
+  buttonDiv.append("button").text("Back").attr("class", "back")
+    .style("visibility", backVisible)
+    .on("click", () => render(scene-1));
+  var nextVisible = (scene < 4) ? "visible" : "hidden";
+  buttonDiv.append("button").text("Next").attr("class", "next")
+    .style("visibility", nextVisible)
+    .on("click", () => render(scene+1));
+}
+
+function render0() {
+  vis.append("h1").text("What's Next For The US Housing Market?");
+  vis.append("p").text("A look at the historical relationship between Median "
+    + "Sales Price and the Average 30 Year Mortgage Rate.");
+
+  vis.append("h3").text("Sources");
+  sources = vis.append("ul");
+  sources.append("li").append("a").text("Average 30-Year Fixed Rate Mortgage")
+    .attr("href", "https://fred.stlouisfed.org/series/MORTGAGE30US")
+  sources.append("li").append("a").text("Consumer Price Index")
+    .attr("href", "https://fred.stlouisfed.org/series/CPIAUCSL")
+  sources.append("li").append("a").text("Median Sales Price")
+    .attr("href", "https://fred.stlouisfed.org/series/MSPUS")
+}
+
+function render1() {
+  renderMSP(vis.append("div"), 800, 400);
+}
+
+function render2() {
+  renderMMP(vis.append("div"), 800, 400);
+}
+
+function render3() {
+  div1 = vis.append("div").style("overflow", "hidden");
+  div1a = div1.append("div").attr("class", "float-half");
+  div1b = div1.append("div").attr("class", "float-half");
+  div2 = vis.append("div");
+  renderMSP(div1a, 400, 150);
+  renderMMP(div1b, 400, 150);
+  renderM30(div2, 800, 300);
+}
+
+function render4() {
+  var div = vis.append("div");
+  DATA.then(data => drawScatterPlot(data, "30Y Mortgage vs Monthly Payment",
+    div, 800, 300, 'm30', 'mmpa'));
+  var div2 = vis.append("div");
+  DATA.then(data => drawScatterPlot(data, "30Y Mortgage vs Median Sales Price",
+    div2, 800, 300, 'm30', 'mspa'));
+}
+
+function renderDate(d) {
+  console.log("renderDate: " + d);
+  DATE_LISTENERS.map(l => l(d));
+}
+
+function renderNoDate() {
+  console.log("renderNoDate");
+  HIDE_LISTENERS.map(l => l());
+}
+
+var DATA = loadData();
+var DATE_LISTENERS = [];
+var HIDE_LISTENERS = [];
+var padding = {top: 0, right: 10, bottom: 20, left: 60};
+var vis = d3.select("body").append("div");
+render(1);
+
+console.log(d3.format("$,")(123456789))

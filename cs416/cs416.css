@@ -3,10 +3,36 @@ body {
   color: #EEEEEE;
   font-family: Verdana, sans-serif;
   margin: auto;
-  max-width: 600px;
+  max-width: 800px;
 }
 h1, h2 {
   text-align: center;
+  margin: 10px auto;
+}
+h3 {
+  margin: 0px;
+}
+h4 {
+  text-align: center;
+  margin: 5px auto;
+}
+p {
+  font-size: 13px;
+  font-style: italic;
+  margin: 5px 0px 20px 0px;
+  text-align: center;
+}
+ul {
+  list-style: none;
+  margin: 0px;
+  padding: 10px;
+}
+li {
+  margin: 5px;
+}
+a:link, a:visited {
+  color: royalblue;
+  text-decoration: none;
 }
 .domain, .tick line {
   stroke: #EEEEEE;
@@ -27,4 +53,33 @@ div.tooltip {
      border-radius: 2px;
      pointer-events: none;
      font-size: .7rem;
+}
+div.buttons {
+  margin: 20px auto;
+  text-align: center;
+}
+div.buttons button {
+  background-color: #202020;
+  border: 2px solid #EEEEEE;
+  color: #EEEEEE;
+  font-family: Verdana, sans-serif;
+  margin-left: 5px;
+  margin-right: 5px;
+}
+div.buttons button:hover {
+  background-color: #EEEEEE;
+  color: #202020;
+  cursor: pointer;
+}
+div.buttons .back {
+  border-radius: 40px 5px 5px 40px;
+  padding: 5px 10px 5px 15px;
+}
+div.buttons .next {
+  border-radius: 5px 40px 40px 5px;
+  padding: 5px 15px 5px 10px;
+}
+div .float-half {
+  float: left;
+  width: 50%;
 }
